@@ -12,7 +12,7 @@ def getPaths(directory, dotFileFormat):
             paths.append(directory + '/' + f)
     return paths
 
-def loadFrames(filename, nframes=None, downsample=0):
+def loadFrames(filename, nframes=None, downsample=0, verbose=False, differences=False):
     ''' Input:
     filename (full path or name of file in cwd)
     nframes (None or number of frames you want)
@@ -37,16 +37,22 @@ def loadFrames(filename, nframes=None, downsample=0):
             # Downsample by 2x per time
             gray = cv2.pyrDown(gray)
         if frames is None:
-           frames = np.zeros( (nframes,) + gray.shape,dtype=np.uint8)
-        frames[t] = gray
+            frames = np.zeros( (nframes,) + gray.shape,dtype=np.uint8)
+        if differences and t > 0:
+            frames[t] = gray - frames[t-1]
+        elif differences and t == nframes-2:
+            return frames.astype(np.float32), fps
+        else:
+            frames[t] = gray
         t+=1
-        if (t+1) % 1000 == 0:
-            print '%d / %d' % (t+1, nframes)
+        if verbose:
+            if (t+1) % 1000 == 0:
+                print '%d / %d' % (t+1, nframes)
     return frames.astype(np.float32), fps
 
 def getAnnotations(annotationDir, annotationPaths, notableEvents, originalFPS, newFPS=1.0):
     ''' Returns a dictionary with Title and Frames'''
-    annotations = []
+    annotationDicts = []
     for a in annotationPaths:
         newMovieEvents = {}
         newMovieEvents['Frames'] = []
@@ -64,18 +70,18 @@ def getAnnotations(annotationDir, annotationPaths, notableEvents, originalFPS, n
                     newFrameNumber = int(round(newFPS*oneEvent[3]/originalFPS))
                     currentEvents.append(newFrameNumber)
                     newMovieEvents['Frames'] = currentEvents
-        annotations.append(newMovieEvents)
-    return annotations
+        annotationDicts.append(newMovieEvents)
+    return annotationDicts
 
 
 def generateLabels(movieEventDict, nFrames):
     return [int(i in movieEventDict['Frames']) for i in xrange(nFrames)]
 
 
-def findMatching(movieDir, movieFormat, moviePaths, annotations):
+def findMatching(movieDir, movieFormat, moviePaths, annotationDicts):
     ''' Returns a list of (moviePath, annotationDict) tuples'''
     data = []
-    for a in annotations:
+    for a in annotationDicts:
         associatedMoviePath = movieDir + '/' + a['Title'] + movieFormat
         try:
             associatedIndex = moviePaths.index(associatedMoviePath)
@@ -119,3 +125,20 @@ def filterMovie(movie, filterBank):
     features = []
     for filt in filterBank:
         features.append([fftconvolve(im, filt, mode='same') for im in frames])
+    return features
+
+def constructData(pairedData, filterBank, differences=True, newFPS=1.0):
+    ''' Return a massive dataset (filteredMoviesConcatenated, labels)'''
+    filteredMoviesConcatenated = []
+    labels = []
+    for moviePath, annotationDict in pairedData:
+        frames, fps = loadFrames(moviePath, differences=differences)
+        if fps != newFPS:
+            print 'Warning, movie ' + moviePath + ' is ' + fps + ' fps.'
+
+
+
+
+
+
+
